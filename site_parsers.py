@@ -1,22 +1,31 @@
-# site_parsers.py -- extract college rows from specific authoritative pages (VTU AJAX endpoint)
+# site_parsers.py -- VTU AJAX parser (DTE disabled)
 
 from scraper_core import fetch_html, soupify
-from utils import normalize_text, extract_phone
+from utils import normalize_text
 
 def parse_vtu_affiliated(url):
     """
-    Parse VTU affiliated institutes using the REAL AJAX endpoint.
-    This endpoint returns full HTML containing all affiliated colleges.
+    Parse VTU affiliated colleges using the REAL AJAX endpoint.
+    It returns HTML with all institute tables.
     """
     ajax_url = "https://vtu.ac.in/wp-admin/admin-ajax.php?action=get_affiliated_institutes"
+    print(f"[VTU] Fetching from AJAX endpoint: {ajax_url}")
 
-    print(f"[VTU] Fetching data from AJAX endpoint: {ajax_url}")
     html = fetch_html(ajax_url)
     soup = soupify(html)
     rows = []
 
-    for table in soup.find_all("table"):
-        for tr in table.find_all("tr")[1:]:  # skip header
+    tables = soup.find_all("table")
+    if not tables:
+        print("[VTU] No tables found — Cloudflare probably still blocking.")
+        return []
+
+    for table in tables:
+        trs = table.find_all("tr")
+        if len(trs) < 2:
+            continue
+
+        for tr in trs[1:]:
             cols = [normalize_text(td.get_text()) for td in tr.find_all("td")]
 
             if len(cols) >= 3:
@@ -34,11 +43,10 @@ def parse_vtu_affiliated(url):
     return rows
 
 
-# DTE parser disabled for now (site blocks Colab & times out)
 def parse_dte_karnataka(url):
     """
-    DISABLED: DTE site blocks scripted requests from Colab.
+    DTE Karnataka blocks Colab traffic.
     Returning empty list for now.
     """
-    print("[DTE] Skipped (site blocks requests from cloud IPs)")
+    print("[DTE] Skipped (DTE site blocks cloud requests)")
     return []
