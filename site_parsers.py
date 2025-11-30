@@ -1,38 +1,47 @@
-# site_parsers.py -- VTU mirror parser (Cloudflare bypass)
+# site_parsers.py -- VTU parser that uses mirror URL or local snapshot
 
 from scraper_core import fetch_html, soupify
 from utils import normalize_text
+import os
 
-def parse_vtu_affiliated(url):
+def parse_vtu_affiliated(_):
     """
-    Instead of scraping VTU directly (Cloudflare blocks Colab),
-    we scrape a STATIC mirror that contains the FULL AJAX HTML result.
+    Try mirror URL first (raw GitHub). If that fails, look for local 'vtu_ajax_snapshot.html'.
     """
+    from config import CONFIG if False else None  # no-op; keep for clarity
+    mirror = None
+    try:
+        import json
+        with open("config.json","r",encoding="utf-8") as f:
+            cfg = json.load(f)
+            mirror = cfg.get("vtu_mirror_url")
+    except Exception:
+        mirror = None
 
-    mirror_url = (
-        "https://raw.githubusercontent.com/open-source-datasets/"
-        "vtu-karnataka-colleges/main/vtu_ajax_snapshot.html"
-    )
+    html = None
+    if mirror:
+        try:
+            print(f"[VTU] Trying mirror: {mirror}")
+            html = fetch_html(mirror)
+        except Exception as e:
+            print("[VTU] Mirror fetch failed:", e)
 
-    print(f"[VTU] Fetching from mirror: {mirror_url}")
+    if html is None:
+        local = "vtu_ajax_snapshot.html"
+        if os.path.exists(local):
+            print("[VTU] Loading local snapshot:", local)
+            with open(local,"r",encoding="utf-8") as f:
+                html = f.read()
+        else:
+            print("[VTU] No mirror or local VTU snapshot available. Please upload 'vtu_ajax_snapshot.html' or set a mirror URL in config.json.")
+            return []
 
-    html = fetch_html(mirror_url)
     soup = soupify(html)
     rows = []
-
     tables = soup.find_all("table")
-    if not tables:
-        print("[VTU] No tables found in mirror.")
-        return []
-
     for table in tables:
-        trs = table.find_all("tr")
-        if len(trs) < 2:
-            continue
-
-        for tr in trs[1:]:  # skip header
+        for tr in table.find_all("tr")[1:]:
             cols = [normalize_text(td.get_text()) for td in tr.find_all("td")]
-
             if len(cols) >= 3:
                 rows.append({
                     "college_name": cols[0],
@@ -41,17 +50,7 @@ def parse_vtu_affiliated(url):
                     "affiliating_university": "VTU",
                     "tpo_name": "-",
                     "tpo_phone": "-",
-                    "source_url": mirror_url
+                    "source_url": mirror or local
                 })
-
-    print(f"[VTU] Extracted {len(rows)} colleges")
+    print(f"[VTU] Extracted {len(rows)} colleges from VTU source")
     return rows
-
-
-def parse_dte_karnataka(url):
-    """
-    DTE blocks Colab/IP scraping.
-    Disabled.
-    """
-    print("[DTE] Skipped (website blocks Colab scraping)")
-    return []
