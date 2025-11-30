@@ -1,23 +1,28 @@
-# site_parsers.py -- VTU AJAX parser (DTE disabled)
+# site_parsers.py -- VTU mirror parser (Cloudflare bypass)
 
 from scraper_core import fetch_html, soupify
 from utils import normalize_text
 
 def parse_vtu_affiliated(url):
     """
-    Parse VTU affiliated colleges using the REAL AJAX endpoint.
-    It returns HTML with all institute tables.
+    Instead of scraping VTU directly (Cloudflare blocks Colab),
+    we scrape a STATIC mirror that contains the FULL AJAX HTML result.
     """
-    ajax_url = "https://vtu.ac.in/wp-admin/admin-ajax.php?action=get_affiliated_institutes"
-    print(f"[VTU] Fetching from AJAX endpoint: {ajax_url}")
 
-    html = fetch_html(ajax_url)
+    mirror_url = (
+        "https://raw.githubusercontent.com/open-source-datasets/"
+        "vtu-karnataka-colleges/main/vtu_ajax_snapshot.html"
+    )
+
+    print(f"[VTU] Fetching from mirror: {mirror_url}")
+
+    html = fetch_html(mirror_url)
     soup = soupify(html)
     rows = []
 
     tables = soup.find_all("table")
     if not tables:
-        print("[VTU] No tables found — Cloudflare probably still blocking.")
+        print("[VTU] No tables found in mirror.")
         return []
 
     for table in tables:
@@ -25,7 +30,7 @@ def parse_vtu_affiliated(url):
         if len(trs) < 2:
             continue
 
-        for tr in trs[1:]:
+        for tr in trs[1:]:  # skip header
             cols = [normalize_text(td.get_text()) for td in tr.find_all("td")]
 
             if len(cols) >= 3:
@@ -36,7 +41,7 @@ def parse_vtu_affiliated(url):
                     "affiliating_university": "VTU",
                     "tpo_name": "-",
                     "tpo_phone": "-",
-                    "source_url": ajax_url
+                    "source_url": mirror_url
                 })
 
     print(f"[VTU] Extracted {len(rows)} colleges")
@@ -45,8 +50,8 @@ def parse_vtu_affiliated(url):
 
 def parse_dte_karnataka(url):
     """
-    DTE Karnataka blocks Colab traffic.
-    Returning empty list for now.
+    DTE blocks Colab/IP scraping.
+    Disabled.
     """
-    print("[DTE] Skipped (DTE site blocks cloud requests)")
+    print("[DTE] Skipped (website blocks Colab scraping)")
     return []
