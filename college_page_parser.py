@@ -1,85 +1,95 @@
-# college_page_parser.py -- find college placement/contact page and extract TPO details when available
+# college_page_parser.py -- heuristics to extract TPO name and phone from college website pages
+
 from scraper_core import fetch_html, soupify
-from utils import normalize_text, extract_phone
+from utils import extract_phone, normalize_text
 from urllib.parse import urljoin, urlparse
-import re
+import re, time
 
-CANDIDATE_PATHS = ["/placement", "/placement-cell", "/placementcell", "/placement.php", "/training-and-placement", "/contact", "/contact-us", "/contactus", "/about-us", "/about"]
+CANDIDATE_PATHS = ["/placement", "/placement-cell", "/placementcell", "/placement.php",
+                   "/training-and-placement", "/contact", "/contact-us", "/about-us", "/faculty"]
 
-TPO_LABELS = ["training & placement", "training and placement", "placement officer", "training & placement officer", "TPO", "placement cell", "placement officer"]
+TPO_LABELS = ["training & placement", "training and placement", "placement officer",
+              "training & placement officer", "tpo", "placement cell", "placement officer"]
 
-def find_college_site_from(seed_text: str) -> str:
-    # attempt to pick url if seed_text contains http(s)
-    import re
-    m = re.search(r"https?://[^\s'\"<>]+", seed_text)
-    return m.group(0) if m else "-"
-
-def discover_and_extract_tpo(college_entry: dict) -> dict:
+def discover_and_extract_tpo(entry, max_attempts=5):
     """
-    Given a partial record with maybe source_url or college_name, try to find college website and extract TPO name/phone
-    This is best-effort. Returns updated entry with tpo_name, tpo_phone, and source_url set to the contact page if found.
+    entry: dict containing at least college_name and possibly source_url or website
+    Will try to find college website (from 'source_url' or 'website' key) and search common pages.
+    Returns updated entry with tpo_name and tpo_phone (or '-') and updated source_url to used page.
     """
-    source = college_entry.get("source_url","-")
-    candidate_urls = []
-    # If source is a college website already, use it
-    if source and source.startswith("http"):
-        candidate_urls.append(source)
-    # Try common candidate paths if domain known
-    if source and source.startswith("http"):
-        parsed = urlparse(source)
-        base = f"{parsed.scheme}://{parsed.netloc}"
-        for p in CANDIDATE_PATHS:
-            candidate_urls.append(urljoin(base, p))
-    # Also try following website link from the source (if the source is a list/table page) -- handled by site-specific parsers
-    # Try each candidate URL
-    for url in candidate_urls:
+
+    # if source_url looks like a college site (contains domain other than vtu/aicte), use it
+    src = entry.get("source_url","")
+    website_candidates = []
+
+    # If entry has explicit website field
+    if entry.get("website"):
+        website_candidates.append(entry.get("website"))
+
+    if src and src.startswith("http"):
+        # if src is a mirror or csv, skip; try to parse a website if present in row
+        pass
+
+    # Try common domain guesses using college name -> create slug? (last resort)
+    # We won't attempt aggressive search engines; instead use website candidates when available.
+
+    # Preferred: if entry has 'college_website' or 'website' field, try it
+    for url in website_candidates:
         try:
             html = fetch_html(url)
-        except Exception as e:
+        except Exception:
             continue
         soup = soupify(html)
-        text = soup.get_text(separator=" ", strip=True).lower()
-        # search for placement section
-        for label in TPO_LABELS:
-            if label in text:
-                # find element containing label
-                elems = soup.find_all(string=re.compile(re.escape(label), re.I))
-                for el in elems:
-                    container = el.parent
-                    # search nearby for phone and names
-                    context_text = " ".join(container.get_text(" ", strip=True).split())
-                    # attempt to extract phone
-                    phone = extract_phone(context_text)
-                    # attempt to capture a name (heuristic: look for words with capitalized pattern preceding typical roles)
-                    name = "-"
-                    # pattern searching: look around for "Dr. X" or "Mr. X" etc within container
-                    # fallback: look for lines with typical name patterns
-                    lines = [l.strip() for l in context_text.splitlines() if l.strip()]
-                    # scan tokens for candidate names (very heuristic)
-                    for ln in lines:
-                        # if line contains roles, remove them
-                        if any(r in ln.lower() for r in ["placement", "training", "tpo", "officer"]):
-                            # try to find names attached: e.g., "Placement Officer: Dr. A B"
-                            parts = re.split(r":|-|–", ln)
-                            if len(parts)>1:
-                                candidate = parts[1].strip()
-                                if len(candidate.split())>=2 and not any(c.isdigit() for c in candidate):
-                                    name = candidate
-                                    break
-                    # if found, store and break
-                    if phone == "-":
-                        # try to find any phone on page
-                        phone = extract_phone(text)
-                    if name == "-":
-                        # try to approximate name by scanning for 'Dr ' or 'Mr ' patterns
-                        m = re.search(r"(Dr\.|Mr\.|Mrs\.|Ms\.)\s+[A-Z][a-zA-Z]+\s+[A-Z][a-zA-Z]+", soup.get_text())
-                        if m:
-                            name = m.group(0)
-                    college_entry["tpo_name"] = name or "-"
-                    college_entry["tpo_phone"] = phone or "-"
-                    college_entry["source_url"] = url
-                    return college_entry
-    # if nothing found, leave defaults
-    college_entry["tpo_name"] = college_entry.get("tpo_name","-") or "-"
-    college_entry["tpo_phone"] = college_entry.get("tpo_phone","-") or "-"
-    return college_entry
+        tpo = search_tpo_in_soup(soup)
+        if tpo:
+            entry["tpo_name"] = tpo.get("name","-")
+            entry["tpo_phone"] = tpo.get("phone","-")
+            entry["source_url"] = url
+            return entry
+
+    # If no explicit website, attempt searching candidate paths on source domain if it's a college url
+    # If entry.source_url is a CSV path, skip
+    if src and src.startswith("http") and "raw.githubusercontent" not in src and "aicte" not in src and "ugc" not in src and "vtu" not in src:
+        parsed = urlparse(src)
+        base = f"{parsed.scheme}://{parsed.netloc}"
+        for p in CANDIDATE_PATHS:
+            url = urljoin(base, p)
+            try:
+                html = fetch_html(url)
+            except Exception:
+                continue
+            soup = soupify(html)
+            tpo = search_tpo_in_soup(soup)
+            if tpo:
+                entry["tpo_name"] = tpo.get("name","-")
+                entry["tpo_phone"] = tpo.get("phone","-")
+                entry["source_url"] = url
+                return entry
+
+    # Not found
+    entry["tpo_name"] = entry.get("tpo_name","-") or "-"
+    entry["tpo_phone"] = entry.get("tpo_phone","-") or "-"
+    return entry
+
+def search_tpo_in_soup(soup):
+    """
+    Search the soup text for TPO patterns and phone numbers; return dict with name and phone if found.
+    """
+    text = soup.get_text(" ", strip=True)
+    low = text.lower()
+    # find a block around keywords
+    idx = None
+    for lbl in TPO_LABELS:
+        idx = low.find(lbl)
+        if idx != -1:
+            break
+    if idx == -1:
+        return None
+    # take snippet
+    start = max(0, idx-300)
+    snippet = text[start: idx+400]
+    phone = extract_phone(snippet)
+    # try to extract name via regex: look for "Placement Officer: Name"
+    m = re.search(r"(Placement|TPO|Training & Placement|Training and Placement)[:\-\s]*([A-Z][A-Za-z\.\s]{2,80})", snippet, re.I)
+    name = m.group(2).strip() if m else "-"
+    return {"name": normalize_text(name), "phone": phone or "-"}
