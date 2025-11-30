@@ -1,16 +1,10 @@
 {
-  "user_agent": "KarnatakaCollegeScraper/1.0 (+https://example.com contact:your-email@example.com)",
-  "rate_limit_seconds": 2,
-  "max_workers": 5,
+  "user_agent": "KarnatakaCollegeScraper/1.0 (+mailto:your-email@example.com)",
+  "rate_limit_seconds": 1.5,
+  "max_workers": 4,
   "timeout_seconds": 15,
-  "max_colleges_limit": 0,
   "output_folder": "output",
-  "sources": {
-    "dte_karnataka": "https://dtek.karnataka.gov.in/6/engineering-colleges/en",
-    "vtu_affiliated": "https://vtu.ac.in/affiliated-institute/",
-    "aicte": "https://aicte.gov.in/"
-  },
-  "university_aliases": {
-    "vtu": ["Visvesvaraya Technological University", "VTU", "Visvesvaraya Technological University (VTU)"]
-  }
+  "aicte_csv_url": "https://raw.githubusercontent.com/your-mirror/aicte-institutes/main/aicte_institutes.csv",
+  "ugc_csv_url": "https://raw.githubusercontent.com/your-mirror/ugc-colleges/main/ugc_colleges.csv",
+  "vtu_mirror_url": "https://raw.githubusercontent.com/open-source-datasets/vtu-karnataka-colleges/main/vtu_ajax_snapshot.html"
 }
