@@ -4,3 +4,4 @@ lxml==4.9.3
 pandas==2.2.3
 tqdm==4.66.1
 tenacity==8.2.2
+regex==2024.4.24
