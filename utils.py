@@ -1,16 +1,15 @@
-# utils.py -- helpers for normalization, phone extraction, and saving outputs
-
+# utils.py
 import re, os, sqlite3, pandas as pd
-PHONE_RE = re.compile(r"(?:\+91[\-\s]?)?(?:\d{10}|\d{3}[\-\s]\d{3}[\-\s]\d{4})")
+
+PHONE_RE = re.compile(r"(?:\+91[\-\s]?)?(?:\d{10}|\d{3}[\-\s]?\d{3}[\-\s]?\d{4})")
 
 def normalize_text(s):
     if s is None: return ""
-    s = str(s).replace("\xa0", " ")
-    return " ".join(s.split()).strip()
+    return " ".join(str(s).replace("\xa0"," ").split()).strip()
 
 def extract_phone(text):
     if not text: return "-"
-    m = PHONE_RE.search(text)
+    m = PHONE_RE.search(str(text))
     return m.group(0) if m else "-"
 
 def save_outputs(df, folder="output"):
