@@ -1,8 +1,8 @@
-# tpo_enrichment.py
+# tpo_enrichment.py  (FIXED VERSION)
 import requests
 from bs4 import BeautifulSoup
 import re, time
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urljoin
 import pandas as pd
 from tqdm import tqdm
 
@@ -27,6 +27,12 @@ KEYWORDS = [
     "recruitment",
 ]
 
+def safe_str(x):
+    try:
+        return str(x).strip()
+    except:
+        return ""
+
 def fetch(url):
     try:
         res = requests.get(url, headers=HEADERS, timeout=10)
@@ -37,72 +43,90 @@ def fetch(url):
     return None
 
 def discover_website(college_name):
+    college_name = safe_str(college_name)
+    if college_name.strip() == "" or college_name.lower() == "nan":
+        return "-"
+    
     query = college_name.replace(" ", "+") + "+official+website"
     search_url = f"https://www.google.com/search?q={query}"
     html = fetch(search_url)
     if html:
         links = re.findall(r'href="(https?://[^"]+)"', html)
         for link in links:
-            if "google" not in link and "youtube" not in link:
+            if ("google" not in link 
+                and "youtube" not in link
+                and "facebook" not in link):
                 return link.split("&")[0]
     return "-"
 
 def find_placement_page(base_url, homepage_html):
     if homepage_html is None:
         return "-"
-
-    soup = BeautifulSoup(homepage_html, "lxml")
-
-    for a in soup.find_all("a", href=True):
-        text = a.get_text().lower()
-        href = a["href"]
-        if any(k in text for k in KEYWORDS):
-            return urljoin(base_url, href)
-
+    try:
+        soup = BeautifulSoup(homepage_html, "lxml")
+        for a in soup.find_all("a", href=True):
+            text = safe_str(a.get_text()).lower()
+            href = a["href"]
+            if any(k in text for k in KEYWORDS):
+                return urljoin(base_url, href)
+    except:
+        return "-"
     return "-"
 
 def extract_contacts(html):
     if html is None:
         return [], [], []
-
+    
     emails = list(set(EMAIL_RE.findall(html)))
     phones = list(set(PHONE_RE.findall(html)))
 
-    # extract possible names
-    names = list(set(NAME_RE.findall(html)))
-    names = [" ".join(n).strip() for n in names]
+    names = []
+    for m in NAME_RE.finditer(html):
+        n = " ".join(m.group()).strip()
+        if len(n.split()) <= 4:
+            names.append(n)
+
+    names = list(set(names))
 
     return emails, phones, names
 
 def enrich_dataset(df):
+    df = df.copy()
+    df["college_name"] = df["college_name"].apply(safe_str)
+
     data = []
 
     for idx, row in tqdm(df.iterrows(), total=len(df), desc="Extracting TPO Data"):
-        name = row["college_name"]
+        name = safe_str(row["college_name"])
 
-        # Step 1: Discover website
+        if name == "" or name.lower() == "nan":
+            data.append([name, "-", "-", "-", "-", "-", "-"])
+            continue
+
+        # Step 1: Find website
         website = discover_website(name)
-        if website == "-":
+
+        if website == "-" or website.strip() == "":
             data.append([name, "-", "-", "-", "-", "-", "-"])
             continue
 
         homepage_html = fetch(website)
 
-        # Step 2: Identify placement/contact page
+        # Step 2: Placement page
         placement_url = find_placement_page(website, homepage_html)
         placement_html = fetch(placement_url) if placement_url != "-" else homepage_html
 
-        # Step 3: Extract emails, phones, names
+        # Step 3: Contacts
         emails, phones, names_found = extract_contacts(placement_html)
 
         data.append([
             name,
             website,
-            placement_url,
+            placement_url if placement_url else "-",
             "; ".join(emails) if emails else "-",
             "; ".join(phones) if phones else "-",
             "; ".join(names_found) if names_found else "-",
-            row["district"]
+            safe_str(row["district"])
         ])
 
         time.sleep(1)  # polite delay
