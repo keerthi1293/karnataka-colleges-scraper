@@ -1,68 +1,62 @@
-# aicte_parser.py -- load AICTE institutions CSV and normalize rows for Karnataka
-
-import os, pandas as pd
-from scraper_core import fetch_html
+# aicte_parser.py
+import os, io, pandas as pd
+from scraper_core import fetch_text
 from utils import normalize_text
+from sources import AICTE_URLS
 
 EXPECTED_LOCAL = "aicte_institutes.csv"
 
-def load_aicte_rows(url=None):
-    """
-    Tries to download CSV from url. If not available, tries local file EXPECTED_LOCAL.
-    Returns list of dict rows mapped to required columns.
-    """
+def load_aicte_karnataka():
     csv_path = None
-    if url:
+    for url in AICTE_URLS:
+        if not url: continue
         try:
-            html = fetch_html(url)
-            # try to save to local temp
+            print("[AICTE] Trying", url)
+            text = fetch_text(url)
+            # try to parse as CSV text
+            df = pd.read_csv(io.StringIO(text), dtype=str)
             csv_path = "aicte_download.csv"
-            with open(csv_path,"w",encoding="utf-8") as f:
-                f.write(html)
+            df.to_csv(csv_path, index=False, encoding="utf-8")
+            break
         except Exception as e:
-            print("[AICTE] Could not download CSV, will try local file:", e)
-
-    if csv_path is None or not os.path.exists(csv_path):
+            print("[AICTE] download failed:", e)
+    if csv_path is None:
         if os.path.exists(EXPECTED_LOCAL):
             csv_path = EXPECTED_LOCAL
         else:
-            print("[AICTE] No AICTE CSV found. Please upload 'aicte_institutes.csv' to workspace.")
+            print("[AICTE] No AICTE CSV available. Please upload 'aicte_institutes.csv' to the workspace.")
             return []
-
     try:
         df = pd.read_csv(csv_path, dtype=str, encoding="utf-8", low_memory=False)
     except Exception:
         df = pd.read_excel(csv_path, dtype=str)
-
-    rows = []
-    # heuristics: look for Karnataka rows via column names
-    df_cols = [c.lower() for c in df.columns]
-    # Try to find columns for name, state, district, university, website, phone
-    def find(colnames):
-        for name in colnames:
-            for c in df.columns:
-                if name in c.lower():
+    # Heuristics to find relevant columns
+    def find(cols):
+        for c in df.columns:
+            low = c.lower()
+            for k in cols:
+                if k in low:
                     return c
         return None
-
-    col_name = find(["institute name","inst name","institute"])
-    col_state = find(["state"])
-    col_district = find(["district"])
-    col_city = find(["city","place","town"])
-    col_univ = find(["affiliat","university"])
-    col_phone = find(["phone","telephone","contact"])
-    col_website = find(["website","web"])
-
+    name_col = find(["institute name","institute","inst name","inst"])
+    state_col = find(["state"])
+    city_col = find(["city","place","town"])
+    district_col = find(["district"])
+    univ_col = find(["affiliat","university"])
+    phone_col = find(["phone","telephone","contact"])
+    rows = []
+    if name_col is None:
+        print("[AICTE] Couldn't find name column; returning empty list.")
+        return []
     for _, r in df.iterrows():
-        state = str(r.get(col_state,"")).strip()
-        if state.lower() != "karnataka" and "karnataka" not in state.lower():
+        state = str(r.get(state_col,"")) if state_col else ""
+        if "karnataka" not in state.lower():
             continue
-        name = normalize_text(r.get(col_name,"-"))
-        city = normalize_text(r.get(col_city,"-"))
-        district = normalize_text(r.get(col_district,"-"))
-        affiliating_university = normalize_text(r.get(col_univ,"-"))
-        website = normalize_text(r.get(col_website,"-"))
-        phone = normalize_text(r.get(col_phone,"-"))
+        name = normalize_text(r.get(name_col,"-"))
+        city = normalize_text(r.get(city_col,"-") if city_col else "-")
+        district = normalize_text(r.get(district_col,"-") if district_col else "-")
+        affiliating_university = normalize_text(r.get(univ_col,"-") if univ_col else "-")
+        phone = normalize_text(r.get(phone_col,"-") if phone_col else "-")
         rows.append({
             "college_name": name or "-",
             "city_town": city or "-",
@@ -72,5 +66,5 @@ def load_aicte_rows(url=None):
             "tpo_phone": phone or "-",
             "source_url": csv_path
         })
-    print(f"[AICTE] Extracted {len(rows)} Karnataka rows from AICTE list")
+    print(f"[AICTE] Extracted {len(rows)} Karnataka rows from AICTE data")
     return rows
