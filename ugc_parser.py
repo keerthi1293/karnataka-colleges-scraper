@@ -1,56 +1,58 @@
-# ugc_parser.py -- load UGC colleges CSV and extract Karnataka degree colleges
-
-import os, pandas as pd
-from scraper_core import fetch_html
+# ugc_parser.py
+import os, io, pandas as pd
+from scraper_core import fetch_text
 from utils import normalize_text
+from sources import UGC_URLS
 
 EXPECTED_LOCAL = "ugc_colleges.csv"
 
-def load_ugc_rows(url=None):
+def load_ugc_karnataka():
     csv_path = None
-    if url:
+    for url in UGC_URLS:
+        if not url: continue
         try:
-            html = fetch_html(url)
+            print("[UGC] Trying", url)
+            text = fetch_text(url)
+            df = pd.read_csv(io.StringIO(text), dtype=str)
             csv_path = "ugc_download.csv"
-            with open(csv_path,"w",encoding="utf-8") as f:
-                f.write(html)
+            df.to_csv(csv_path, index=False, encoding="utf-8")
+            break
         except Exception as e:
-            print("[UGC] Could not download CSV, will try local file:", e)
-
-    if csv_path is None or not os.path.exists(csv_path):
+            print("[UGC] download failed:", e)
+    if csv_path is None:
         if os.path.exists(EXPECTED_LOCAL):
             csv_path = EXPECTED_LOCAL
         else:
-            print("[UGC] No UGC CSV found. Please upload 'ugc_colleges.csv' to workspace.")
+            print("[UGC] No UGC CSV available. Please upload 'ugc_colleges.csv' to the workspace.")
             return []
-
     try:
         df = pd.read_csv(csv_path, dtype=str, encoding="utf-8", low_memory=False)
     except Exception:
         df = pd.read_excel(csv_path, dtype=str)
-
-    rows = []
-    def find(colnames):
-        for name in colnames:
-            for c in df.columns:
-                if name in c.lower():
+    def find(cols):
+        for c in df.columns:
+            low = c.lower()
+            for k in cols:
+                if k in low:
                     return c
         return None
-
-    col_name = find(["college name","name","inst"])
-    col_state = find(["state","st"])
-    col_district = find(["district"])
-    col_city = find(["city","place","town"])
-    col_univ = find(["affiliat","university"])
-
+    name_col = find(["college name","name","inst"])
+    state_col = find(["state","st"])
+    city_col = find(["city","place","town"])
+    district_col = find(["district"])
+    univ_col = find(["affiliat","university"])
+    rows = []
+    if name_col is None:
+        print("[UGC] Couldn't find name column; returning empty list.")
+        return []
     for _, r in df.iterrows():
-        state = str(r.get(col_state,"")).strip()
-        if state.lower() != "karnataka" and "karnataka" not in state.lower():
+        state = str(r.get(state_col,"")) if state_col else ""
+        if "karnataka" not in state.lower():
             continue
-        name = normalize_text(r.get(col_name,"-"))
-        city = normalize_text(r.get(col_city,"-"))
-        district = normalize_text(r.get(col_district,"-"))
-        affiliating_university = normalize_text(r.get(col_univ,"-"))
+        name = normalize_text(r.get(name_col,"-"))
+        city = normalize_text(r.get(city_col,"-") if city_col else "-")
+        district = normalize_text(r.get(district_col,"-") if district_col else "-")
+        affiliating_university = normalize_text(r.get(univ_col,"-") if univ_col else "-")
         rows.append({
             "college_name": name or "-",
             "city_town": city or "-",
@@ -60,5 +62,5 @@ def load_ugc_rows(url=None):
             "tpo_phone": "-",
             "source_url": csv_path
         })
-    print(f"[UGC] Extracted {len(rows)} Karnataka rows from UGC list")
+    print(f"[UGC] Extracted {len(rows)} Karnataka rows from UGC data")
     return rows
