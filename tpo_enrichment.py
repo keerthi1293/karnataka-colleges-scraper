@@ -1,4 +1,4 @@
-# tpo_enrichment.py  (FIXED VERSION)
+# tpo_enrichment.py (FINAL FIXED VERSION)
 import requests
 from bs4 import BeautifulSoup
 import re, time
@@ -29,7 +29,10 @@ KEYWORDS = [
 
 def safe_str(x):
     try:
-        return str(x).strip()
+        s = str(x).strip()
+        if s.lower() in ["nan", "none", "null"]:
+            return ""
+        return s
     except:
         return ""
 
@@ -44,11 +47,16 @@ def fetch(url):
 
 def discover_website(college_name):
     college_name = safe_str(college_name)
-    if college_name.strip() == "" or college_name.lower() == "nan":
+
+    if college_name == "":
         return "-"
-    
+
+    # ABSOLUTE SAFEGUARD — ensures replace() always works
+    college_name = str(college_name)
+
     query = college_name.replace(" ", "+") + "+official+website"
     search_url = f"https://www.google.com/search?q={query}"
+
     html = fetch(search_url)
     if html:
         links = re.findall(r'href="(https?://[^"]+)"', html)
@@ -62,6 +70,7 @@ def discover_website(college_name):
 def find_placement_page(base_url, homepage_html):
     if homepage_html is None:
         return "-"
+
     try:
         soup = BeautifulSoup(homepage_html, "lxml")
         for a in soup.find_all("a", href=True):
@@ -71,19 +80,20 @@ def find_placement_page(base_url, homepage_html):
                 return urljoin(base_url, href)
     except:
         return "-"
+
     return "-"
 
 def extract_contacts(html):
     if html is None:
         return [], [], []
-    
+
     emails = list(set(EMAIL_RE.findall(html)))
     phones = list(set(PHONE_RE.findall(html)))
 
     names = []
     for m in NAME_RE.finditer(html):
-        n = " ".join(m.group()).strip()
-        if len(n.split()) <= 4:
+        n = " ".join(m.group().split())
+        if 1 <= len(n.split()) <= 4:
             names.append(n)
 
     names = list(set(names))
@@ -99,24 +109,21 @@ def enrich_dataset(df):
     for idx, row in tqdm(df.iterrows(), total=len(df), desc="Extracting TPO Data"):
         name = safe_str(row["college_name"])
 
-        if name == "" or name.lower() == "nan":
+        if name == "":
             data.append([name, "-", "-", "-", "-", "-", "-"])
             continue
 
-        # Step 1: Find website
         website = discover_website(name)
 
-        if website == "-" or website.strip() == "":
+        if website == "-":
             data.append([name, "-", "-", "-", "-", "-", "-"])
             continue
 
         homepage_html = fetch(website)
 
-        # Step 2: Placement page
         placement_url = find_placement_page(website, homepage_html)
         placement_html = fetch(placement_url) if placement_url != "-" else homepage_html
 
-        # Step 3: Contacts
         emails, phones, names_found = extract_contacts(placement_html)
 
         data.append([
@@ -126,10 +133,10 @@ def enrich_dataset(df):
             "; ".join(emails) if emails else "-",
             "; ".join(phones) if phones else "-",
             "; ".join(names_found) if names_found else "-",
-            safe_str(row["district"])
+            safe_str(row.get("district", "-"))
         ])
 
-        time.sleep(1)  # polite delay
+        time.sleep(1)
 
     return pd.DataFrame(data, columns=[
         "college_name",
