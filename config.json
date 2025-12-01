@@ -1,10 +1,21 @@
 {
   "user_agent": "KarnatakaCollegeScraper/1.0 (+mailto:your-email@example.com)",
   "rate_limit_seconds": 1.5,
-  "max_workers": 4,
   "timeout_seconds": 15,
   "output_folder": "output",
-  "aicte_csv_url": "https://raw.githubusercontent.com/your-mirror/aicte-institutes/main/aicte_institutes.csv",
-  "ugc_csv_url": "https://raw.githubusercontent.com/your-mirror/ugc-colleges/main/ugc_colleges.csv",
-  "vtu_mirror_url": "https://raw.githubusercontent.com/open-source-datasets/vtu-karnataka-colleges/main/vtu_ajax_snapshot.html"
+  "aicte_urls": [
+    "https://www.aicte-india.org/sites/default/files/All_Institutes.csv",
+    "https://raw.githubusercontent.com/your-mirror/aicte-institutes/main/aicte_institutes.csv"
+  ],
+  "ugc_urls": [
+    "https://deb.ugc.ac.in/Students/UGCCOLLEGES.csv",
+    "https://raw.githubusercontent.com/your-mirror/ugc-colleges/main/ugc_colleges.csv"
+  ],
+  "vtu_ajax": "https://vtu.ac.in/wp-admin/admin-ajax.php?action=get_affiliated_institutes",
+  "vtu_region_pages": [
+    "https://vtu.ac.in/affiliated-institute/",
+    "https://vtu.ac.in/bengaluru-affiliated-colleges/",
+    "https://vtu.ac.in/mysore-affiliated-colleges/",
+    "https://vtu.ac.in/mangalore-affiliated-colleges/"
+  ]
 }
